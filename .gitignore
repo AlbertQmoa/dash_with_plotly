@@ -1,2 +1,3 @@
 data/
-temp*
+*temp*
+temp.py

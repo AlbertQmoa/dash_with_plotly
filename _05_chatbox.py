@@ -1,3 +1,4 @@
+import re
 import dash
 from dash import html, dcc, callback, Input, Output, State
 import dash_bootstrap_components as dbc
@@ -22,11 +23,11 @@ send_button = html.Button("Summit", id="send-button", n_clicks=0, className="btn
 loading = dcc.Loading(id='send-loading', children=[html.Div(id='send-info')])
 input_div = html.Div([user_input_textarea, send_button, loading], 
                      style={'position': 'fixed', 'bottom': 0, 'left': 0, 'right': 0, 'padding': '10px', 'background': 'white'})
-chat_box_div = html.Div(id='chat-box', style={'overflow': 'auto', 'max-height': '75vh', 'padding-bottom': '20px'})
+chat_box_div = html.Div(id='chat-box', style={'overflow': 'auto', 'max-height': '70vh', 'padding': '10px'})
 
 
 # 使用外部定义的组件构建layout
-app.layout = html.Div([chat_history_store, chat_box_div, input_div], style={'padding': '10px'})
+app.layout = html.Div([chat_history_store, chat_box_div, input_div])
 
 
 def generate_plot_response():
@@ -52,6 +53,34 @@ def trigger_request(n_clicks):
     return dash.no_update
 
 
+
+def format_xml_content(message):
+    components = []  # 初始化一个空列表来存放组件
+    last_end = 0  # 上一次匹配结束的位置
+
+    # 正则表达式以匹配 XML 声明以及<ABC>...</ABC>
+    pattern = re.compile(r'(<\?xml.*?\?>)?\s*(<ABC>.*?</ABC>)', re.DOTALL)
+    for match in pattern.finditer(message):
+        start = match.start()
+
+        # 添加前一个匹配和当前匹配之间的原始文本
+        if start > last_end:
+            components.append(html.Pre(message[last_end:start], style={'white-space': 'pre-wrap'}))
+
+        # 对于 XML 部分，包括声明，使用 html.Div 进行突出显示，同时内部使用 html.Pre 保留格式
+        xml_content = html.Div(html.Pre(match.group(0), style={'white-space': 'pre-wrap'}), style={'background-color': '#f0f0f5', 'padding': '5px', 'border-radius': '5px'})
+        components.append(xml_content)
+
+        last_end = match.end()
+
+    # 添加最后一个匹配后的剩余文本
+    if last_end < len(message):
+        components.append(html.Pre(message[last_end:], style={'white-space': 'pre-wrap'}))
+    
+    return components
+
+
+
 @app.callback(
     Output('chat-box', 'children'),
     Output('user-input', 'value'),
@@ -75,14 +104,14 @@ def update_chat(info, user_input, chat_history):
 
     # 将用户输入的内容添加到聊天历史中
     chat_history.append({'sender': 'User', 'message': user_input})
+    print(f'user: {user_input[-5:]}')
 
     # 简单地反转用户输入作为服务器响应
-    server_response = f"{user_input[::-1]}"
+    server_response = user_input
     chat_history.append({'sender': 'Server', 'message': server_response})
-    
+    print(f'server: {server_response[-5:]}')
+
     # 假设根据某些条件服务器决定发送一个散点图
-    import time
-    time.sleep(5)
     if "plot" in user_input:
         plot_response = generate_plot_response()
         chat_history.append({'sender': 'Server', 'type': 'plot', 'content': plot_response})
@@ -94,9 +123,18 @@ def update_chat(info, user_input, chat_history):
 
     # 遍历聊天历史并按照顺序构建聊天内容
     for msg in chat_history:
+        chat_message_components = []  # 初始化一个空列表来存放每条消息的组件
+        if msg.get('type') == 'plot':
+            # 对于图表类型的消息，直接添加图表组件
+            chat_message_components.append(msg['content'])
+        else:
+            # 对于文本消息，使用format_xml_content处理并保留原始格式
+            chat_message_components.extend(format_xml_content(msg['message']))
+
+        # 将消息的发送者和内容组合到一个Div中
         chat_content.append(html.Div([
-            html.B(f"{msg['sender']}:", style={'color': '#007BFF' if msg['sender'] == 'User' else '#FF5733'}),
-            msg['content'] if msg.get('type') == 'plot' else html.Pre(msg['message'], style={'white-space': 'pre-wrap', 'margin-left': '20px'}),
+            html.B(f"{msg['sender']}:", style={'color': '#007BFF' if msg['sender'] == 'User' else '#FF5733', 'font-size': '20px'}),
+            *chat_message_components,  # 使用*解包来添加所有组件
         ], style={'margin-bottom': '15px'}))
 
     time_end = datetime.now().strftime('%Y-%m-%d %H:%M:%S')    
